@@ -2,7 +2,7 @@
 import numpy as np
 
 
-class LAIDevelopmentSSWM:
+class LAIGrowth:
     
     def __init__(self, sm_model, g_plus, a, xi, s_tilde, b0, Tg):
         self.sm_model = sm_model
