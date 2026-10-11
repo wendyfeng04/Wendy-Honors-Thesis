@@ -9,3 +9,4 @@ Hi! you can follow the instructions below to regenerate all my results:)
 # Step 2: Plotting the Graphs
 To generate all the plots, please run the xx notebook in the same folder/environment with [sswm.py](./sswm.py), [growth.py](./growth.py), [sswm.py](./sswm.py),and [Sites_Data.csv](./Sites_Data.csv)
 
+Please note that substantial amount of the code refer from 
