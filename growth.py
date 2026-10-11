@@ -1,4 +1,3 @@
-
 # ref: (Vico & Porporato, 2013), (Goudriaan & Monteith, 1990)
 import numpy as np
 
