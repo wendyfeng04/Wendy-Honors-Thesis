@@ -1,0 +1,247 @@
+
+# =============================================================================
+# site growing-season average precipitation/PET/ET
+# Output:
+#   Site
+#   G_S_Ave_P_d             (m day^-1)
+#   G_S_Ave_P_freq_d        (day^-1)
+#   G_S_Ave_P_intensity_d   (m event^-1)
+#   G_S_Ave_PET_d           (m day^-1)
+#   G_S_Ave_ET_d            (m day^-1)
+#   G_S_length_days         (days)
+# =============================================================================
+
+library(dplyr)
+library(lubridate)
+
+# =============================================================================
+# 1. PATHS
+# =============================================================================
+
+data_dir <- "~/Desktop/Thesis Fluxnet Data/Processed Data"
+out_dir  <- "~/Desktop/Thesis_data_processed"
+
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+
+# =============================================================================
+# 2. SITE SETTINGS (IL-Yat excluded)
+# =============================================================================
+
+site_info <- data.frame(
+  site = c("FI-Hyy", "US-Fmf", "CA-TP4", "FR-Pue"),
+  
+  gs_start_md = c(
+    "05-15",  # FI-Hyy
+    "05-15",  # US-Fmf
+    "05-15",  # CA-TP4
+    "04-01"   # FR-Pue
+  ),
+  
+  gs_end_md = c(
+    "07-31",  # FI-Hyy
+    "08-31",  # US-Fmf
+    "08-31",  # CA-TP4
+    "07-15"   # FR-Pue
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# =============================================================================
+# 3. PROCESS EACH SITE
+# =============================================================================
+
+process_site <- function(site_name, gs_start_md, gs_end_md) {
+  
+  file_path <- file.path(
+    data_dir,
+    paste0(site_name, "_daily.csv")
+  )
+  
+  daily <- read.csv(file_path, stringsAsFactors = FALSE) %>%
+    mutate(
+      date = as.Date(date),
+      year = year(date)
+    )
+  
+  # ---------------------------------------------------------------------------
+  # A. Filter growing-season dates
+  # ---------------------------------------------------------------------------
+  
+  gs <- daily %>%
+    filter(
+      date >= as.Date(paste0(year, "-", gs_start_md)),
+      date <= as.Date(paste0(year, "-", gs_end_md))
+    )
+  
+  # ---------------------------------------------------------------------------
+  # B. Check growing-season completeness
+  #
+  # Keep years only if:
+  #   1. Every growing-season calendar day is present exactly once
+  #   2. ET, PET, P and rain_day contain no missing values
+  # ---------------------------------------------------------------------------
+  
+  completeness <- gs %>%
+    group_by(year) %>%
+    summarise(
+      expected_days = as.integer(
+        as.Date(paste0(first(year), "-", gs_end_md)) -
+          as.Date(paste0(first(year), "-", gs_start_md))
+      ) + 1,
+      
+      n_days = n(),
+      n_unique_days = n_distinct(date),
+      
+      n_missing = sum(
+        is.na(ET_m_day) |
+          is.na(PET_m_day) |
+          is.na(P_m_day) |
+          is.na(rain_day)
+      ),
+      
+      .groups = "drop"
+    ) %>%
+    mutate(
+      complete = (
+        n_days == expected_days &
+          n_unique_days == expected_days &
+          n_missing == 0
+      )
+    )
+  
+  complete_years <- completeness %>%
+    filter(complete) %>%
+    pull(year)
+  
+  message(
+    site_name, ": ",
+    length(complete_years),
+    " complete growing seasons"
+  )
+  
+  # ---------------------------------------------------------------------------
+  # C. Keep all complete years
+  # ---------------------------------------------------------------------------
+  
+  gs_complete <- gs %>%
+    filter(year %in% complete_years)
+  
+  # ---------------------------------------------------------------------------
+  # D. Calculate growing-season averages for EACH year
+  # ---------------------------------------------------------------------------
+  
+  yearly_summary <- gs_complete %>%
+    group_by(year) %>%
+    summarise(
+      
+      G_S_Ave_P_d = mean(P_m_day),
+      
+      G_S_Ave_P_freq_d = mean(rain_day == 1),
+      
+      G_S_Ave_P_intensity_d = if (
+        sum(rain_day == 1) > 0
+      ) {
+        sum(P_m_day) / sum(rain_day == 1)
+      } else {
+        NA_real_
+      },
+      
+      G_S_Ave_PET_d = mean(PET_m_day),
+      
+      G_S_Ave_ET_d = mean(ET_m_day),
+      
+      G_S_length_days = n(),
+      
+      .groups = "drop"
+    )
+  
+  # ---------------------------------------------------------------------------
+  # E. Average across ALL complete years
+  # ---------------------------------------------------------------------------
+  
+  if (nrow(yearly_summary) == 0) {
+    
+    return(data.frame(
+      Site = site_name,
+      G_S_Ave_P_d = NA_real_,
+      G_S_Ave_P_freq_d = NA_real_,
+      G_S_Ave_P_intensity_d = NA_real_,
+      G_S_Ave_PET_d = NA_real_,
+      G_S_Ave_ET_d = NA_real_,
+      G_S_length_days = NA_real_
+    ))
+  }
+  
+  site_average <- yearly_summary %>%
+    summarise(
+      
+      Site = site_name,
+      
+      G_S_Ave_P_d = mean(G_S_Ave_P_d),
+      
+      G_S_Ave_P_freq_d = mean(G_S_Ave_P_freq_d),
+      
+      G_S_Ave_P_intensity_d = mean(
+        G_S_Ave_P_intensity_d,
+        na.rm = TRUE
+      ),
+      
+      G_S_Ave_PET_d = mean(G_S_Ave_PET_d),
+      
+      G_S_Ave_ET_d = mean(G_S_Ave_ET_d),
+      
+      G_S_length_days = mean(G_S_length_days)
+      
+    ) %>%
+    select(
+      Site,
+      G_S_Ave_P_d,
+      G_S_Ave_P_freq_d,
+      G_S_Ave_P_intensity_d,
+      G_S_Ave_PET_d,
+      G_S_Ave_ET_d,
+      G_S_length_days
+    )
+  
+  return(site_average)
+}
+
+
+# =============================================================================
+# 4. RUN ALL SITES
+# =============================================================================
+
+all_results <- list()
+
+for (i in seq_len(nrow(site_info))) {
+  
+  site_name <- site_info$site[i]
+  
+  all_results[[site_name]] <- process_site(
+    site_name = site_name,
+    gs_start_md = site_info$gs_start_md[i],
+    gs_end_md = site_info$gs_end_md[i]
+  )
+}
+
+final_summary <- bind_rows(all_results)
+
+print(final_summary)
+
+
+# =============================================================================
+# 5. EXPORT 
+# =============================================================================
+
+write.csv(
+  final_summary,
+  file.path(out_dir, "All_Sites_GS_Average.csv"),
+  row.names = FALSE
+)
+
+message("Saved: ", file.path(out_dir, "All_Sites_GS_Average.csv"))
+
+
